@@ -5,11 +5,12 @@
  */
 package org.hibernate.reactive.it.verticle;
 
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+
+import javax.persistence.*;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Objects;
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
 
 @Entity
 public class Product {
@@ -22,6 +23,10 @@ public class Product {
 
 	@Column(nullable = false)
 	private BigDecimal price;
+
+	@OneToMany(mappedBy = "product", cascade = CascadeType.ALL)
+	@JsonManagedReference
+	private List<ProductItem> items;
 
 	public Product() {
 	}
@@ -54,6 +59,14 @@ public class Product {
 
 	public void setPrice(BigDecimal price) {
 		this.price = price;
+	}
+
+	public List<ProductItem> getItems() {
+		return items;
+	}
+
+	public void setItems(List<ProductItem> productItems) {
+		this.items = productItems;
 	}
 
 	@Override

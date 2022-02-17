@@ -25,6 +25,7 @@ dependencies {
     // Testing
     testImplementation 'org.assertj:assertj-core:3.20.2'
     testImplementation "io.vertx:vertx-unit:${vertxVersion}"
+    testImplementation 'net.java.dev.jna:jna-platform:5.10.0'
 }
 
 // Print a summary of the results of the tests (number of failures, successes and skipped)

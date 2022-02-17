@@ -47,6 +47,7 @@ public class StartVerticle {
 	private static Configuration constructConfiguration(boolean enableDocker) {
 		Configuration configuration = new Configuration();
 		configuration.addAnnotatedClass( Product.class );
+		configuration.addAnnotatedClass( ProductItem.class );
 
 		configuration.setProperty( Settings.HBM2DDL_AUTO, "create" );
 		configuration.setProperty( Settings.URL, dbConnectionUrl( enableDocker ) );

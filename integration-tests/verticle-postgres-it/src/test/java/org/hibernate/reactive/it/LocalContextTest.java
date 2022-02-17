@@ -5,19 +5,6 @@
  */
 package org.hibernate.reactive.it;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import org.hibernate.reactive.it.verticle.Product;
-import org.hibernate.reactive.it.verticle.ProductVerticle;
-import org.hibernate.reactive.it.verticle.StartVerticle;
-import org.hibernate.reactive.mutiny.Mutiny;
-
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import junit.framework.AssertionFailedError;
-
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.DeploymentOptions;
@@ -31,6 +18,18 @@ import io.vertx.ext.unit.junit.VertxUnitRunner;
 import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.mutiny.core.Vertx;
+import junit.framework.AssertionFailedError;
+import org.hibernate.reactive.it.verticle.Product;
+import org.hibernate.reactive.it.verticle.ProductItem;
+import org.hibernate.reactive.it.verticle.ProductVerticle;
+import org.hibernate.reactive.it.verticle.StartVerticle;
+import org.hibernate.reactive.mutiny.Mutiny;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+
+import java.util.ArrayList;
+import java.util.List;
 
 
 /**
@@ -52,97 +51,102 @@ import io.vertx.mutiny.core.Vertx;
 @RunWith(VertxUnitRunner.class)
 public class LocalContextTest {
 
-	// Number of requests: each request is a product created and then searched
-	private static final int REQUEST_NUMBER = 20;
+    // Number of requests: each request is a product created and then searched
+    private static final int REQUEST_NUMBER = 20;
 
-	// Keep this value to 1 or the test won't fail when expected
-	private static final int VERTICLE_INSTANCES = 1;
+    // Keep this value to 1 or the test won't fail when expected
+    private static final int VERTICLE_INSTANCES = 1;
 
-	@Rule
-	public Timeout rule = Timeout.seconds( 5 * 60 );
+    @Rule
+    public Timeout rule = Timeout.seconds(5 * 60);
 
-	@Test
-	public void testProductsGeneration(TestContext context) {
-		final Async async = context.async();
-		final Vertx vertx = Vertx.vertx( StartVerticle.vertxOptions() );
+    @Test
+    public void testProductsGeneration(TestContext context) {
+        final Async async = context.async();
+        final Vertx vertx = Vertx.vertx(StartVerticle.vertxOptions());
 
-		Mutiny.SessionFactory sf = StartVerticle
-				.createHibernateSessionFactory( StartVerticle.USE_DOCKER, vertx.getDelegate() )
-				.unwrap( Mutiny.SessionFactory.class );
+        Mutiny.SessionFactory sf = StartVerticle
+                .createHibernateSessionFactory(StartVerticle.USE_DOCKER, vertx.getDelegate())
+                .unwrap(Mutiny.SessionFactory.class);
 
-		final WebClient webClient = WebClient.create( vertx.getDelegate() );
+        final WebClient webClient = WebClient.create(vertx.getDelegate());
 
-		final DeploymentOptions deploymentOptions = new DeploymentOptions();
-		deploymentOptions.setInstances( VERTICLE_INSTANCES );
+        final DeploymentOptions deploymentOptions = new DeploymentOptions();
+        deploymentOptions.setInstances(VERTICLE_INSTANCES);
 
-		vertx
-				.deployVerticle( () -> new ProductVerticle( () -> sf ), deploymentOptions )
-				.map( s -> webClient )
-				.call( this::createProducts )
-				.call( this::findProducts )
-				.eventually( vertx::close )
-				.subscribe().with(
-						res -> async.complete(),
-						context::fail
-				);
-	}
+        vertx
+                .deployVerticle(() -> new ProductVerticle(() -> sf), deploymentOptions)
+                .map(s -> webClient)
+                .call(this::createProducts)
+                .call(this::findProducts)
+                .eventually(vertx::close)
+                .subscribe().with(
+                        res -> async.complete(),
+                        context::fail
+                );
+    }
 
-	/**
-	 * Create several products using http requests
-	 *
-	 * @see #REQUEST_NUMBER
-	 */
-	private Uni<?> createProducts(WebClient webClient) {
-		List<Future> postRequests = new ArrayList<>();
-		for ( int i = 0; i < REQUEST_NUMBER; i++ ) {
-			Product product = new Product( i + 1 );
+    /**
+     * Create several products using http requests
+     *
+     * @see #REQUEST_NUMBER
+     */
+    private Uni<?> createProducts(WebClient webClient) {
+        List<Future> postRequests = new ArrayList<>();
+        for (int i = 0; i < REQUEST_NUMBER; i++) {
+            Product product = new Product(i + 1);
+            ProductItem item = new ProductItem();
+            item.setId((long) (i + 1));
+			item.setName("test" + i);
+			item.setProduct(product);
+			product.setItems(List.of(item));
 
-			final Future<HttpResponse<Buffer>> send = webClient
-					.post( ProductVerticle.HTTP_PORT, "localhost", "/products" )
-					.sendJsonObject( JsonObject.mapFrom( product ) );
+            final Future<HttpResponse<Buffer>> send = webClient
+                    .post(ProductVerticle.HTTP_PORT, "localhost", "/products")
+                    .sendJsonObject(JsonObject.mapFrom(product));
 
-			postRequests.add( send );
-		}
-		return Uni.createFrom().completionStage( CompositeFuture.all( postRequests ).toCompletionStage() );
-	}
+            postRequests.add(send);
+        }
+        return Uni.createFrom().completionStage(CompositeFuture.all(postRequests).toCompletionStage());
+    }
 
-	/**
-	 * Use http requests to find the products previously created and validate them
-	 *
-	 * @see #REQUEST_NUMBER
-	 */
-	private Uni<?> findProducts(WebClient webClient) {
-		List<Future> getRequests = new ArrayList<>();
-		for ( int i = 0; i < REQUEST_NUMBER; i++ ) {
-			final Product expected = new Product( i + 1 );
+    /**
+     * Use http requests to find the products previously created and validate them
+     *
+     * @see #REQUEST_NUMBER
+     */
+    private Uni<?> findProducts(WebClient webClient) {
+        List<Future> getRequests = new ArrayList<>();
+        for (int i = 0; i < REQUEST_NUMBER; i++) {
+            final Product expected = new Product(i + 1);
 
-			// Send the request
-			final Future<Void> send = webClient.get(
-							ProductVerticle.HTTP_PORT,
-							"localhost",
-							"/products/" + expected.getId()
-					)
-					.send()
-					.compose( event -> handle( expected, event ) );
+            // Send the request
+            final Future<Void> send = webClient.get(
+                            ProductVerticle.HTTP_PORT,
+                            "localhost",
+                            "/products/" + expected.getId()
+                    )
+                    .send()
+                    .compose(event -> handle(expected, event));
 
-			getRequests.add( send );
-		}
-		return Uni.createFrom().completionStage( CompositeFuture.all( getRequests ).toCompletionStage() );
-	}
+            getRequests.add(send);
+        }
+        return Uni.createFrom().completionStage(CompositeFuture.all(getRequests).toCompletionStage());
+    }
 
-	/**
-	 * Check that the expected product is returned by the response.
-	 */
-	private Future<Void> handle(Product expected, HttpResponse<Buffer> response) {
-		if ( response.statusCode() != 200 ) {
-			return Future.failedFuture( new AssertionFailedError( "Expected status code 200 but was " + response.statusCode() ) );
-		}
+    /**
+     * Check that the expected product is returned by the response.
+     */
+    private Future<Void> handle(Product expected, HttpResponse<Buffer> response) {
+        if (response.statusCode() != 200) {
+            return Future.failedFuture(new AssertionFailedError("Expected status code 200 but was " + response.statusCode()));
+        }
 
-		final Product found = response.bodyAsJson( Product.class );
-		if ( !expected.equals( found ) ) {
-			return Future.failedFuture( new AssertionFailedError( "Wrong value returned. Expected " + expected + " but was " + found ) );
-		}
+        final Product found = response.bodyAsJson(Product.class);
+        if (!expected.equals(found)) {
+            return Future.failedFuture(new AssertionFailedError("Wrong value returned. Expected " + expected + " but was " + found));
+        }
 
-		return Future.succeededFuture();
-	}
+        return Future.succeededFuture();
+    }
 }
